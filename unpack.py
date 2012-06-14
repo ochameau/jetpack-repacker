@@ -266,6 +266,9 @@ def getPackagesFiles(zip, version, manifest, package):
     # Yield only given package files
     if not file.startswith("resources/" + packagePath):
       continue
+    # Ignore folders
+    if file[-1] == "/":
+      continue
     # Compute the relative path for this file,
     # from the section folder (i.e. lib or data folder)
     relpath = file.replace("resources/" + packagePath, "")
@@ -280,7 +283,7 @@ def getPackagesFiles(zip, version, manifest, package):
 def processAddon(path, args):
   if os.path.isdir(path):
     zip = FakeZip(path)
-  elif os.path.splitext(path)[1] == "xpi":
+  elif "xpi" in os.path.splitext(path)[1]:
     zip = ZipFile(path)
   else:
     raise Exception("`path` should be either a xpi file or an addon directry")
@@ -338,6 +341,10 @@ def verify_addon(zip, version, manifest):
   return bad_files
 
 def repack(path, zip, version, manifest, target):
+  deps = getAddonDependencies(manifest)
+  if "api-utils" in deps.keys():
+    raise Exception("We are only able to repack addons which use only high-level APIs from addon-kit package")
+
   # Unpack the given addon to a temporary folder
   tmp = tempfile.mkdtemp(prefix="tmp-addon-folder")
   unpack(zip, version, manifest, tmp)
@@ -372,10 +379,7 @@ def unpack(zip, version, manifest, target):
   packages.remove("addon-kit")
   packages.remove("api-utils")
   if len(packages) != 1:
-    raise Exception("We are only able to repack addons without extra packages ", packages)
-  deps = getAddonDependencies(manifest)
-  if "api-utils" in deps.keys():
-    raise Exception("We are only able to repack addons which use only high-level APIs from addon-kit package")
+    raise Exception("We are only able to unpack/repack addons without extra packages ", packages)
   os.mkdir(os.path.join(target, "lib"))
   os.mkdir(os.path.join(target, "data"))
   os.mkdir(os.path.join(target, "locale"))
@@ -391,11 +395,16 @@ def unpack(zip, version, manifest, target):
     if not section in ["lib", "data"]:
       raise Exception("Unexpected section folder name: " + section)
     destFile = os.path.join(target, section, relpath)
-    zip.extract(file, destFile)
+    # We have to use zipinfo object in order to extract a file to a different
+    # path, then we have to repalce `\` in windows as zip only uses `/`
+    info = zip.getinfo(file)
+    info.filename = destFile.replace("\\", "/")
+    zip.extract(info)
 
   # Copy locales
   for file in zip.namelist():
-    if not file.startswith("locale/"):
+    # Ignore everything outside of locale folder, and folders
+    if not file.startswith("locale/") or file[-1] == "/":
       continue
     langcode = os.path.splitext(os.path.basename(file))[0]
     locale = json.loads(zip.read(file))
