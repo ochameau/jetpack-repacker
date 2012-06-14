@@ -434,15 +434,20 @@ def unpack(zip, version, manifest, target):
 
 import argparse
 
-parser = argparse.ArgumentParser("SDK addons repacker")
+parser = argparse.ArgumentParser("SDK addons repacker",
+  formatter_class=argparse.RawDescriptionHelpFormatter,
+  description="Available actions:\n - `deps`: display dependencies used by the addon\n" +
+              " - `checksum`: verify that the addon is only using official SDK files\n" +
+              " - `unpack`: create a source package out of an \"compiled\" addon\n" +
+              " - `repack`: rebuild an addon with another SDK version (need SDK `cfx` application)")
 parser.add_argument("--batch", action="store_true", dest="batch",
-                    help="Process a folder containing addons")
+                    help="Process `path` argument as a folder containing multiple addons")
 parser.add_argument("--target", dest="target", default=os.path.dirname(__file__),
                     help="Folder where to put repacked xpi file(s)")
 parser.add_argument("action", choices=["deps", "checksum", "unpack", "repack"],
                     help="Action to execute")
 parser.add_argument("path",
-                    help="path to either a xpi file, an extension folder to process")
+                    help="path to either a xpi file or an extension folder to process")
 args = parser.parse_args()
 
 if args.action == "repack":
