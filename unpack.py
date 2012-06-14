@@ -345,7 +345,10 @@ def repack(path, zip, version, manifest, target):
   # Execute `cfx xpi`
   p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   std = p.communicate()
-  xpiPath = os.path.join(target, os.path.basename(path) + "-repacked.xpi")
+  basename = os.path.basename(path)
+  if len(basename) == 0:
+    basename = os.path.basename(os.path.dirname(path))
+  xpiPath = os.path.join(target, basename + "-repacked.xpi")
   if "Exporting extension to " in std[0]:
     xpiName = re.search(" ([^ ]+\.xpi)", std[0]).group(1)
     tmpXpiPath = os.path.join(tmp, xpiName)
