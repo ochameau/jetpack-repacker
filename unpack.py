@@ -7,50 +7,73 @@ import tempfile
 import shutil
 import subprocess
 import hashlib
+import urllib
+
+JETPACK_HASH_URL = "https://raw.github.com/mattbasta/amo-validator/master/validator/testcases/jetpack_data.txt"
 
 # Build a big hashtable that can be queried like this:
 # - for a package file:
 #  jetpack_hash_table[$sdkVersion]["packages"][$packageName][$sectionName][$filePath]
 # - for a bootstrap file (from "python-lib/cuddlefish/app-extension" folder)
 #  jetpack_hash_table[$sdkVersion]["bootstrap"][$filePath]
-jetpack_hash_table = {}
-jetpack_data = open(os.path.join(os.path.dirname(__file__),
-                                 "jetpack_data.txt"))
-for line in [x.split() for x in jetpack_data]:
-  path = line[0].split("/")
-  version = line[1]
-  hash = line[2]
+CACHED_HASH_TABLE = None
+def getJetpackHashTable():
+  global CACHED_HASH_TABLE
+  if CACHED_HASH_TABLE:
+    return CACHED_HASH_TABLE
+  hash_table = {}
+  data_file = os.path.join(os.path.dirname(__file__),
+                                   "jetpack_data.txt")
+  if not os.path.exists(data_file):
+    try:
+      print "Dowloading jetpack hash data file ..."
+      urllib.urlretrieve(JETPACK_HASH_URL, data_file)
+      print "Successfully downloaded to " + data_file
+    except Exception, e:
+      raise Exception("Unable to download jetpack hash data file", e)
+  data = open(data_file)
 
-  if not version in jetpack_hash_table:
-    jetpack_hash_table[version] = {
-      "packages": {},
-      "bootstrap": {} 
-    }
-  by_version = jetpack_hash_table[version]
+  for line in [x.split() for x in data]:
+    path = line[0].split("/")
+    version = line[1]
+    hash = line[2]
 
-  # Catch boostrap files from app-extension folder
-  # Ignore defaults/preferences/prefs.js (isn't in xpi file)
-  if len(path) > 4 and path[3] == "app-extension" and not "prefs.js" in path:
-    # Get the relative path from "app-extension", in order to end up
-    # with "bootstrap.js" and "components/harness.js"
-    file = "/".join(path[path.index("app-extension")+1:])
-    by_version['bootstrap'][file] = hash
+    if not version in hash_table:
+      hash_table[version] = {
+        "packages": {},
+        "bootstrap": {} 
+      }
+    by_version = hash_table[version]
 
-  # Otherwise, we only care about addon-kit/api-utils packages files
-  elif len(path) > 2 and path[1] == "packages":
-    package = path[2]
-    section = path[3]
-    # we only care about lib and data sections.
-    if not section in ["lib", "data"]:
-      continue
-    file = "/".join(path[4:])
-    if not package in by_version["packages"]:
-      by_version["packages"][package] = {}
-    by_package = by_version["packages"][package]
-    if not section in by_package:
-      by_package[section] = {}
-    by_section = by_package[section]
-    by_section[file] = hash
+    # Catch boostrap files from app-extension folder
+    # Ignore defaults/preferences/prefs.js (isn't in xpi file)
+    if len(path) > 4 and path[3] == "app-extension" and not "prefs.js" in path:
+      # Get the relative path from "app-extension", in order to end up
+      # with "bootstrap.js" and "components/harness.js"
+      file = "/".join(path[path.index("app-extension")+1:])
+      by_version['bootstrap'][file] = hash
+
+    # Otherwise, we only care about addon-kit/api-utils packages files
+    elif len(path) > 2 and path[1] == "packages":
+      package = path[2]
+      section = path[3]
+      # we only care about lib and data sections.
+      if not section in ["lib", "data"]:
+        continue
+      file = "/".join(path[4:])
+      if not package in by_version["packages"]:
+        by_version["packages"][package] = {}
+      by_package = by_version["packages"][package]
+      if not section in by_package:
+        by_package[section] = {}
+      by_section = by_package[section]
+      by_section[file] = hash
+
+  # Save this hash table in cache in order to avoid reading this file
+  # for each addon
+  CACHED_HASH_TABLE = hash_table
+
+  return hash_table
 
 
 # Get list of packages shipped on the addon
@@ -170,6 +193,7 @@ def getFileHash(zip, file):
 # like bootstrap.js and components/harness.js
 def verifyBootstrapFiles(zip, version):
   bad_files = []
+  jetpack_hash_table = getJetpackHashTable()
   hash_table = jetpack_hash_table[version]["bootstrap"]
   for file, officialHash in hash_table.items():
     if officialHash != getFileHash(zip, file):
@@ -179,6 +203,7 @@ def verifyBootstrapFiles(zip, version):
 # Verify checksums of a given package
 def verifyPackageFiles(zip, manifest, version, package):
   bad_files = []
+  jetpack_hash_table = getJetpackHashTable()
   hash_table = jetpack_hash_table[version]["packages"][package]
 
   for file, section, relpath in getPackagesFiles(zip, version, manifest, package):
@@ -301,6 +326,7 @@ def processAddon(path, args):
     raise Exception("Unsupported action:", args.action)
 
 def verify_addon(zip, version, manifest):
+  jetpack_hash_table = getJetpackHashTable()
   if not version in jetpack_hash_table:
     raise Exception("SDK Version '" + version + "' doesn't have official hash")
   bad_files = verifyBootstrapFiles(zip, version)
