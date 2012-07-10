@@ -210,9 +210,9 @@ def verifyPackageFiles(zip, manifest, version, package):
     # we verify only html and js files
     if not (file.endswith(".js") or file.endswith(".html")):
       continue
-    
-    officialHash = hash_table[section][relpath]
-    if officialHash != getFileHash(zip, file):
+
+    if not relpath in hash_table[section] or \
+      hash_table[section][relpath] != getFileHash(zip, file):
       bad_files.append(file)
   return bad_files
 
@@ -316,22 +316,25 @@ def processAddon(path, args):
     print path + "; " + version + "; " + res + "; " + json.dumps(bad_files)
   elif args.action == "unpack":
     bad_files = verify_addon(zip, version, manifest)
-    if len(bad_files) > 0:
-      raise Exception("Unable to unpack because of wrong checksum on", bad_files)
+    if not args.force and len(bad_files) > 0:
+      raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
     unpack(zip, version, manifest, args.target)
     print path + " unpacked to " + args.target
   elif args.action == "repack":
     bad_files = verify_addon(zip, version, manifest)
-    if len(bad_files) > 0:
-      raise Exception("Unable to repack because of wrong checksum on", bad_files)
-    repack(path, zip, version, manifest, args.target)
+    if not args.force and len(bad_files) > 0:
+      raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
+    repacked_path = repack(path, zip, version, manifest, args.target)
+    # Eventually do a diff between original xpi and repacked one
+    if args.diff:
+      print_diff(path, repacked_path)
   else:
     raise Exception("Unsupported action:", args.action)
 
 def verify_addon(zip, version, manifest):
   jetpack_hash_table = getJetpackHashTable()
   if not version in jetpack_hash_table:
-    raise Exception("SDK Version '" + version + "' doesn't have official hash")
+    raise Exception("This addon is build with '" + version + "' SDK version, whose doesn't have official hashes.")
   bad_files = verifyBootstrapFiles(zip, version)
   packages = getPackages(manifest)
   if "addon-kit" in packages:
@@ -350,17 +353,17 @@ def repack(path, zip, version, manifest, target):
   unpack(zip, version, manifest, tmp)
   
   # Execute `cfx xpi`
-  p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
   std = p.communicate()
   basename = os.path.basename(path)
   if len(basename) == 0:
     basename = os.path.basename(os.path.dirname(path))
-  xpiPath = os.path.join(target, basename + "-repacked.xpi")
+  xpi_path = os.path.join(target, basename + "-repacked.xpi")
   if "Exporting extension to " in std[0]:
     xpiName = re.search(" ([^ ]+\.xpi)", std[0]).group(1)
     tmpXpiPath = os.path.join(tmp, xpiName)
-    shutil.move(tmpXpiPath, xpiPath)
-    print "Successfully repacked", path, "to", xpiPath
+    shutil.move(tmpXpiPath, xpi_path)
+    print "Successfully repacked", path, "to", xpi_path
   else:
     print "Error while building the new xpi: "
     print std[0]
@@ -369,9 +372,43 @@ def repack(path, zip, version, manifest, target):
   # Delete the temporary folder
   shutil.rmtree(tmp)
 
+  return xpi_path
+
+import filecmp
+from difflib import unified_diff
+def print_diff(zipA, zipB):
+  pathA = tempfile.mkdtemp(prefix="xpi-A")
+  pathB = tempfile.mkdtemp(prefix="xpi-B")
+
+  ZipFile(zipA).extractall(pathA)
+  ZipFile(zipB).extractall(pathB)
+
+  dircmp = filecmp.dircmp(pathA, pathB)
+
+  if len(dircmp.left_only) > 0:
+    print "Removed files:"
+    print dircmp.left_only
+
+  if len(dircmp.right_only) > 0:
+    print "New files:"
+    print dircmp.right_only
+
+  if len(dircmp.diff_files) > 0:
+    print "Modified files:"
+    for file_path in dircmp.diff_files:
+      # Use `U` mode in order to ignore different OS EOL
+      sA = open(os.path.join(pathA, file_path), 'U').readlines()
+      sB = open(os.path.join(pathB, file_path), 'U').readlines()
+      for line in unified_diff(sA, sB, fromfile=pathA + "/" + file_path, tofile=pathB + "/" + file_path):
+        sys.stdout.write(line)
+
+  shutil.rmtree(pathA)
+  shutil.rmtree(pathB)
 
 # Unpack a given addon to `target` folder
 def unpack(zip, version, manifest, target):
+  if not os.path.isdir(target):
+    raise Exception("`--target` options should be a path to an empty directory")
   if len(os.listdir(target)) > 0:
     raise Exception("Unable to unpack in an non-empty directory", target)
   packages = getPackages(manifest)
@@ -437,6 +474,10 @@ def unpack(zip, version, manifest, target):
   # `id` attribute isn't saved into metadata
   # A whitelist of attributes is used
   packageMetadata['id'] = manifest['jetpackID']
+  # preferences are hopefully copied to the manifest
+  # we just have to copy them back to package.json
+  if 'preferences' in manifest:
+    packageMetadata['preferences'] = manifest['preferences']
   packageJson = os.open(os.path.join(target, "package.json"), os.O_WRONLY | os.O_CREAT)
   os.write(packageJson, json.dumps(packageMetadata, indent=2))
   os.close(packageJson)
@@ -456,6 +497,10 @@ parser.add_argument("--batch", action="store_true", dest="batch",
                     help="Process `path` argument as a folder containing multiple addons")
 parser.add_argument("--target", dest="target", default=os.path.dirname(__file__),
                     help="Folder where to put repacked xpi file(s)")
+parser.add_argument("--force", action="store_true", dest="force", default=False,
+                    help="Force unpack/repack even if checksums are wrong and addon are using a patched SDK version.")
+parser.add_argument("--diff", action="store_true", dest="diff", default=False,
+                    help="Print a diff between original XPI and repacked one.")
 parser.add_argument("action", choices=["deps", "checksum", "unpack", "repack"],
                     help="Action to execute")
 parser.add_argument("path",
