@@ -513,13 +513,22 @@ def unpack(zip, version, manifest, target):
   if not package in metadata:
     raise Exception("Unable to find addon package in manifest's metadata field")
   packageMetadata = metadata[package]
+
   # `id` attribute isn't saved into metadata
   # A whitelist of attributes is used
   packageMetadata['id'] = manifest['jetpackID']
+
+  # Nor `fullName` which is eventually used for install.rdf name
+  rdf = zip.read('install.rdf')
+  name = re.search("<em:name>(.+)<\/em:name>", rdf).group(1)
+  if name != packageMetadata['name']:
+    packageMetadata['fullName'] = name
+
   # preferences are hopefully copied to the manifest
   # we just have to copy them back to package.json
   if 'preferences' in manifest:
     packageMetadata['preferences'] = manifest['preferences']
+
   packageJson = os.open(os.path.join(target, "package.json"), os.O_WRONLY | os.O_CREAT)
   os.write(packageJson, json.dumps(packageMetadata, indent=2))
   os.close(packageJson)
