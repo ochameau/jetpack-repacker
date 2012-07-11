@@ -231,7 +231,16 @@ class FakeZip:
         l.append( os.path.relpath(os.path.join(top, nm), self.path) )
     return l
 
-  def extract(self, name, path):
+  def getinfo(self, name):
+    class Info(object):
+      def __init__(self, name):
+        self.originalName = name
+        self.filename = None
+    return Info(name)
+
+  def extract(self, info):
+    name = info.originalName # path in zip file
+    path = info.filename # absolute path on fs
     # ensure that containing folder exists
     parentFolder = os.path.dirname(path)
     if not os.path.exists(parentFolder):
@@ -353,7 +362,10 @@ def repack(path, zip, version, manifest, target):
   unpack(zip, version, manifest, tmp)
   
   # Execute `cfx xpi`
-  p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+  shell = False
+  if sys.platform == 'win32':
+    shell = True
+  p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
   std = p.communicate()
   basename = os.path.basename(path)
   if len(basename) == 0:
@@ -377,32 +389,62 @@ def repack(path, zip, version, manifest, target):
 import filecmp
 from difflib import unified_diff
 def print_diff(zipA, zipB):
-  pathA = tempfile.mkdtemp(prefix="xpi-A")
-  pathB = tempfile.mkdtemp(prefix="xpi-B")
+  stat = False
+  # in batch mode, original zip may be a uncompressed addon directory
+  if os.path.isdir(zipA):
+    pathA = zipA
+  else:
+    pathA = tempfile.mkdtemp(prefix="xpi-A")
+    ZipFile(zipA).extractall(pathA)
 
-  ZipFile(zipA).extractall(pathA)
+  pathB = tempfile.mkdtemp(prefix="xpi-B")
   ZipFile(zipB).extractall(pathB)
 
   dircmp = filecmp.dircmp(pathA, pathB)
 
-  if len(dircmp.left_only) > 0:
+  left_only = []
+  right_only = []
+  diff_files = []
+  def recurse(path, dircmp):
+    left_only.extend([os.path.join(path, x) for x in dircmp.left_only])
+    right_only.extend([os.path.join(path, x) for x in dircmp.right_only])
+    diff_files.extend([os.path.join(path, x) for x in dircmp.diff_files])
+    for p, dir in dircmp.subdirs.iteritems():
+      recurse(os.path.join(path, p), dir)
+  
+  recurse("", dircmp)
+
+  if len(left_only) > 0:
     print "Removed files:"
-    print dircmp.left_only
+    for p in left_only:
+      print " - " + p
 
-  if len(dircmp.right_only) > 0:
+  if len(right_only) > 0:
     print "New files:"
-    print dircmp.right_only
+    for p in right_only:
+      print " + " + p
 
-  if len(dircmp.diff_files) > 0:
+  if len(diff_files) > 0:
     print "Modified files:"
-    for file_path in dircmp.diff_files:
+    for file_path in diff_files:
       # Use `U` mode in order to ignore different OS EOL
       sA = open(os.path.join(pathA, file_path), 'U').readlines()
       sB = open(os.path.join(pathB, file_path), 'U').readlines()
-      for line in unified_diff(sA, sB, fromfile=pathA + "/" + file_path, tofile=pathB + "/" + file_path):
-        sys.stdout.write(line)
+      line_added = 0
+      line_deleted = 0
+      for line in unified_diff(sA, sB, fromfile=zipA + "/" + file_path, tofile=zipB + "/" + file_path):
+        if stat:
+          if line[0] == '+':
+            line_added += 1
+          elif line[0] == '-':
+            line_deleted += 1
+        else:
+          sys.stdout.write(line)
+      if stat:
+        print " * " + file_path + " ++(" + str(line_added) + ") --(" + str(line_deleted) + ")"
 
-  shutil.rmtree(pathA)
+  if pathA != zipA:
+    shutil.rmtree(pathA)
   shutil.rmtree(pathB)
 
 # Unpack a given addon to `target` folder
@@ -433,7 +475,7 @@ def unpack(zip, version, manifest, target):
       raise Exception("Unexpected section folder name: " + section)
     destFile = os.path.join(target, section, relpath)
     # We have to use zipinfo object in order to extract a file to a different
-    # path, then we have to repalce `\` in windows as zip only uses `/`
+    # path, then we have to replace `\` in windows as zip only uses `/`
     info = zip.getinfo(file)
     info.filename = destFile.replace("\\", "/")
     zip.extract(info)
