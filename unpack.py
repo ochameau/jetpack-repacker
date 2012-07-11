@@ -389,7 +389,7 @@ def repack(path, zip, version, manifest, target):
 import filecmp
 from difflib import unified_diff
 def print_diff(zipA, zipB):
-  stat = False
+  stat = True
   # in batch mode, original zip may be a uncompressed addon directory
   if os.path.isdir(zipA):
     pathA = zipA
@@ -507,6 +507,19 @@ def unpack(zip, version, manifest, target):
         raise Exception("Unsupported locale value type: ", val)
     os.close(property)
 
+  # Eventually copy icon files, may not exist so ignore any error
+  try:
+    info = zip.getinfo("icon.png")
+    info.filename = os.path.join(target, "icon.png").replace("\\", "/")
+    zip.extract(info)
+  except:
+    ()
+  try:
+    info = zip.getinfo("icon64.png")
+    info.filename = os.path.join(target, "icon64.png").replace("\\", "/")
+    zip.extract(info)
+  except:
+    ()
 
   # Recreate a package.json file
   metadata = manifest['metadata']
