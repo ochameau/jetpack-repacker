@@ -333,10 +333,19 @@ def processAddon(path, args):
     bad_files = verify_addon(zip, version, manifest)
     if not args.force and len(bad_files) > 0:
       raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
-    repacked_path = repack(path, zip, version, manifest, args.target)
+    repacked_path = repack(path, zip, version, manifest, args.target, args.sdk)
     # Eventually do a diff between original xpi and repacked one
-    if args.diff:
-      print_diff(path, repacked_path)
+    if args.diff or args.diffstat:
+      print_diff(path, repacked_path, args.diffstat)
+  elif args.action == "repackability":
+    bad_files = verify_addon(zip, version, manifest)
+    if not args.force and len(bad_files) > 0:
+      raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
+    sdk_path = os.path.join(args.sdks, version)
+    if not os.path.exists(sdk_path):
+      raise Exception("Unable to find matching SDK directory for version '" + version + "'")
+    repacked_path = repack(path, zip, version, manifest, args.target, sdk_path)
+    report_diff(path, repacked_path)
   else:
     raise Exception("Unsupported action:", args.action)
 
@@ -352,7 +361,7 @@ def verify_addon(zip, version, manifest):
     bad_files.extend(verifyPackageFiles(zip, manifest, version, "api-utils"))
   return bad_files
 
-def repack(path, zip, version, manifest, target):
+def repack(path, zip, version, manifest, target, sdk_path):
   deps = getAddonDependencies(manifest)
   if "api-utils" in deps.keys():
     raise Exception("We are only able to repack addons which use only high-level APIs from addon-kit package")
@@ -365,7 +374,9 @@ def repack(path, zip, version, manifest, target):
   shell = False
   if sys.platform == 'win32':
     shell = True
-  p = subprocess.Popen(["cfx", "xpi"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
+  cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && cfx xpi"]
+  cwd = sdk_path
+  p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
   std = p.communicate()
   basename = os.path.basename(path)
   if len(basename) == 0:
@@ -388,8 +399,7 @@ def repack(path, zip, version, manifest, target):
 
 import filecmp
 from difflib import unified_diff
-def print_diff(zipA, zipB):
-  stat = True
+def print_diff(zipA, zipB, stat):
   # in batch mode, original zip may be a uncompressed addon directory
   if os.path.isdir(zipA):
     pathA = zipA
@@ -424,6 +434,7 @@ def print_diff(zipA, zipB):
     for p in right_only:
       print " + " + p
 
+  stat = False
   if len(diff_files) > 0:
     print "Modified files:"
     for file_path in diff_files:
@@ -440,13 +451,85 @@ def print_diff(zipA, zipB):
             line_deleted += 1
         else:
           sys.stdout.write(line)
-      if stat:
+      if stat and (line_added > 0 or line_deleted > 0):
         print " * " + file_path + " ++(" + str(line_added) + ") --(" + str(line_deleted) + ")"
 
   if pathA != zipA:
     shutil.rmtree(pathA)
   shutil.rmtree(pathB)
 
+def report_diff(zipA, zipB):
+  # in batch mode, original zip may be a uncompressed addon directory
+  if os.path.isdir(zipA):
+    pathA = zipA
+  else:
+    pathA = tempfile.mkdtemp(prefix="xpi-A")
+    ZipFile(zipA).extractall(pathA)
+
+  pathB = tempfile.mkdtemp(prefix="xpi-B")
+  ZipFile(zipB).extractall(pathB)
+
+  dircmp = filecmp.dircmp(pathA, pathB)
+
+  left_only = []
+  right_only = []
+  diff_files = []
+  def recurse(path, dircmp):
+    left_only.extend([os.path.join(path, x) for x in dircmp.left_only])
+    right_only.extend([os.path.join(path, x) for x in dircmp.right_only])
+    diff_files.extend([os.path.join(path, x) for x in dircmp.diff_files])
+    for p, dir in dircmp.subdirs.iteritems():
+      recurse(os.path.join(path, p), dir)
+
+  recurse("", dircmp)
+
+  # We can safely ignore tests section folders being removed
+  for p in left_only:
+    if p.endswith("/tests") or p.endswith("-tests"):
+      left_only.remove(p)
+
+  # We ignore new addon-kit/api-utils files
+  # author most likely used --strip-xpi option which we are not using
+  for p in right_only:
+    if "-addon-kit-" in p or "-api-utils-" in p:
+      right_only.remove(p)
+
+  if len(left_only) > 0:
+    print "Removed files:"
+    for p in left_only:
+      print " - " + p
+
+  if len(right_only) > 0:
+    print "New files:"
+    for p in right_only:
+      print " + " + p
+
+  # We ignore any modification to the manifest file
+  # Some random number are written in bootstrap.classID attribute ...
+  if "harness-options.json" in diff_files:
+    diff_files.remove("harness-options.json")
+
+  patches = []
+  for file_path in diff_files:
+    # Use `U` mode in order to ignore different OS EOL
+    sA = open(os.path.join(pathA, file_path), 'U').readlines()
+    sB = open(os.path.join(pathB, file_path), 'U').readlines()
+    diff = []
+    for line in unified_diff(sA, sB, fromfile="original-xpi/" + file_path, tofile="repacked-xpi/" + file_path):
+      diff.append(line)
+    if len(diff) > 0:
+      patches.append(diff)
+
+  if len(patches) > 0:
+    print "Modified files:"
+    for diff in patches:
+      print "".join(diff)
+
+  if pathA != zipA:
+    shutil.rmtree(pathA)
+  shutil.rmtree(pathB)
+
+  
 # Unpack a given addon to `target` folder
 def unpack(zip, version, manifest, target):
   if not os.path.isdir(target):
@@ -489,20 +572,20 @@ def unpack(zip, version, manifest, target):
     locale = json.loads(zip.read(file))
     property = os.open(os.path.join(target, "locale", langcode + ".properties"), os.O_WRONLY | os.O_CREAT)
     for key, val in locale.items():
-      if isinstance(val, unicode):
-        str = key + u"=" + val + "\n"
-        os.write(property, str.encode("utf-8"))
+      if isinstance(val, unicode) or isinstance(val, str):
+        s = key + u"=" + val + "\n"
+        os.write(property, s.encode("utf-8"))
       # Handle plural forms which are dictionnary
       elif isinstance(val, dict):
         for rule, plural in val.items():
-          str = key 
+          s = key 
           # A special case for `other`, the generic form
           # SDK < 1.8 require a generic form. 
           # Newer versions accept having only plural form for all keys
           if rule != "other":
-            str = str + u"[" + rule + u"]"
-          str = str + u"=" + plural + "\n"
-          os.write(property, str.encode("utf-8"))
+            s = s + u"[" + rule + u"]"
+          s = s + u"=" + plural + "\n"
+          os.write(property, s.encode("utf-8"))
       else:
         raise Exception("Unsupported locale value type: ", val)
     os.close(property)
@@ -556,7 +639,8 @@ parser = argparse.ArgumentParser("SDK addons repacker",
   description="Available actions:\n - `deps`: display dependencies used by the addon\n" +
               " - `checksum`: verify that the addon is only using official SDK files\n" +
               " - `unpack`: create a source package out of an \"compiled\" addon\n" +
-              " - `repack`: rebuild an addon with another SDK version (need SDK `cfx` application)")
+              " - `repackability`: do various sanity check to see how safe the repack would be (requires `--sdks` argument)\n" +
+              " - `repack`: rebuild an addon with another SDK version (requires `--sdk` argument)")
 parser.add_argument("--batch", action="store_true", dest="batch",
                     help="Process `path` argument as a folder containing multiple addons")
 parser.add_argument("--target", dest="target", default=os.path.dirname(__file__),
@@ -564,21 +648,27 @@ parser.add_argument("--target", dest="target", default=os.path.dirname(__file__)
 parser.add_argument("--force", action="store_true", dest="force", default=False,
                     help="Force unpack/repack even if checksums are wrong and addon are using a patched SDK version.")
 parser.add_argument("--diff", action="store_true", dest="diff", default=False,
-                    help="Print a diff between original XPI and repacked one.")
-parser.add_argument("action", choices=["deps", "checksum", "unpack", "repack"],
+                    help="Print a diff patch between original XPI and repacked one.")
+parser.add_argument("--diffstat", action="store_true", dest="diffstat", default=False,
+                    help="Print a diff statistics between original XPI and repacked one.")
+
+parser.add_argument("--sdk", dest="sdk", default=None,
+                    help="Path to SDK folder to use for repacking.")
+parser.add_argument("--sdks", dest="sdks", default=None,
+                    help="Path to the directory with each released SDK version.")
+
+parser.add_argument("action", choices=["deps", "checksum", "unpack", "repackability", "repack"],
                     help="Action to execute")
 parser.add_argument("path",
                     help="path to either a xpi file or an extension folder to process")
 args = parser.parse_args()
 
-if args.action == "repack":
-  try:
-    subprocess.check_output("cfx --version", shell=True)
-  except OSError, e:
-    if e.errno == errno.ENOENT:
-      print "Unable to run `cfx` application"
-      print "Please install and setup cfx environnement"
-      sys.exit()
+if args.action == "repack" and not args.sdk:
+  print "`repack` requires --sdk option to be given."
+  sys.exit()
+elif args.action == "repackability" and not args.sdks:
+  print "`repackability` requires --sdks option to be given."
+  sys.exit()
 
 if args.batch:
   for path in os.listdir(args.path):
