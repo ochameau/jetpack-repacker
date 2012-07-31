@@ -333,26 +333,44 @@ def processAddon(path, args):
     bad_files = verify_addon(zip, version, manifest)
     if not args.force and len(bad_files) > 0:
       raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
-    repacked_path = repack(path, zip, version, manifest, args.target, args.sdk)
+    repacked_path = repack(path, zip, version, manifest, args.target, args.sdk, args.force)
+    if repacked_path:
+      print "Successfully repacked", path, "to", repacked_path
     # Eventually do a diff between original xpi and repacked one
     if args.diff or args.diffstat:
       print_diff(path, repacked_path, args.diffstat)
   elif args.action == "repackability":
-    bad_files = verify_addon(zip, version, manifest)
+    try:
+      bad_files = verify_addon(zip, version, manifest)
+    except Exception, e:
+      print path + ": " + str(e)
+      return
     if not args.force and len(bad_files) > 0:
-      raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
+      print path + ": checksum - Unable to repack because of wrong checksum or unknown files: " + str(bad_files)
+      return
     sdk_path = os.path.join(args.sdks, version)
     if not os.path.exists(sdk_path):
       raise Exception("Unable to find matching SDK directory for version '" + version + "'")
-    repacked_path = repack(path, zip, version, manifest, args.target, sdk_path)
-    report_diff(path, repacked_path)
+    try:
+      repacked_path = repack(path, zip, version, manifest, args.target, sdk_path, args.force)
+    except Exception, e:
+      print path + ": " + str(e)
+      return
+    if not repacked_path:
+      print path + ": error while repacking" 
+      return
+    diffs = report_diff(path, repacked_path)
+    if len(diffs) == 0:
+      print path + ": repackable"
+    else:
+      print path + ": " + ", ".join(diffs)
   else:
     raise Exception("Unsupported action:", args.action)
 
 def verify_addon(zip, version, manifest):
   jetpack_hash_table = getJetpackHashTable()
   if not version in jetpack_hash_table:
-    raise Exception("This addon is build with '" + version + "' SDK version, whose doesn't have official hashes.")
+    raise Exception("unofficial-sdk - This addon is build with '" + version + "' SDK version, whose doesn't have official hashes.")
   bad_files = verifyBootstrapFiles(zip, version)
   packages = getPackages(manifest)
   if "addon-kit" in packages:
@@ -361,10 +379,10 @@ def verify_addon(zip, version, manifest):
     bad_files.extend(verifyPackageFiles(zip, manifest, version, "api-utils"))
   return bad_files
 
-def repack(path, zip, version, manifest, target, sdk_path):
+def repack(path, zip, version, manifest, target, sdk_path, force=False):
   deps = getAddonDependencies(manifest)
-  if "api-utils" in deps.keys():
-    raise Exception("We are only able to repack addons which use only high-level APIs from addon-kit package")
+  if "api-utils" in deps.keys() and not force:
+    raise Exception("lowlevel-api - We are only able to repack addons which use only high-level APIs from addon-kit package")
 
   # Unpack the given addon to a temporary folder
   tmp = tempfile.mkdtemp(prefix="tmp-addon-folder")
@@ -386,11 +404,12 @@ def repack(path, zip, version, manifest, target, sdk_path):
     xpiName = re.search(" ([^ ]+\.xpi)", std[0]).group(1)
     tmpXpiPath = os.path.join(tmp, xpiName)
     shutil.move(tmpXpiPath, xpi_path)
-    print "Successfully repacked", path, "to", xpi_path
+
   else:
     print "Error while building the new xpi: "
     print std[0]
     print std[1]
+    xpi_path = False
 
   # Delete the temporary folder
   shutil.rmtree(tmp)
@@ -459,6 +478,8 @@ def print_diff(zipA, zipB, stat):
   shutil.rmtree(pathB)
 
 def report_diff(zipA, zipB):
+  result = []
+
   # in batch mode, original zip may be a uncompressed addon directory
   if os.path.isdir(zipA):
     pathA = zipA
@@ -498,11 +519,13 @@ def report_diff(zipA, zipB):
     print "Removed files:"
     for p in left_only:
       print " - " + p
+    result.append("delete")
 
   if len(right_only) > 0:
     print "New files:"
     for p in right_only:
       print " + " + p
+    result.append("add")
 
   # We ignore any modification to the manifest file
   # Some random number are written in bootstrap.classID attribute ...
@@ -524,10 +547,13 @@ def report_diff(zipA, zipB):
     print "Modified files:"
     for diff in patches:
       print "".join(diff)
+    result.append("modified")
 
   if pathA != zipA:
     shutil.rmtree(pathA)
   shutil.rmtree(pathB)
+
+  return result
 
   
 # Unpack a given addon to `target` folder
@@ -671,8 +697,9 @@ elif args.action == "repackability" and not args.sdks:
   sys.exit()
 
 if args.batch:
-  for path in os.listdir(args.path):
+  for relpath in os.listdir(args.path):
     try:
+      path = os.path.join(args.path, relpath)
       # Ignore already repacked addons
       if "-repacked" in path:
         continue
