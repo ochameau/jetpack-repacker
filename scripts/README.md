@@ -1,4 +1,3 @@
-
 === REPACK INSTRUCTIONS ===
 
 0/ Setup environnement and download these scripts
@@ -19,12 +18,14 @@ $ /addons/scripts/fetch-ftp.sh
 # This script will download all xpi files. You can re-run it at anytime to download only new files.
 # but note that remove files from mozilla ftp will be kept locally.
 # xpi will be in /addons/ftp/ftp.mozilla.org/pub/mozilla.org/addons/
+# (On 2012/07, it downloaded 17GB of files.)
 ```
 
 2/ Unzip jetpack xpi files
 ```
 $ /addons/repacker/scripts/unzip.sh /addons/ftp/ftp.mozilla.org/pub/mozilla.org/addons/ /addons/src
 # This script will unzip all jetpack xpi files to /addons/src/jetpack folder
+# (On 2012/07, it unpacked 770MB of data)
 ```
 
 3/ Checkout all SDK released versions
