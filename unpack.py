@@ -315,6 +315,7 @@ def processAddon(path, args):
     for package, modules in deps.items():
       modules.sort()
     print path + "; " + version + "; " + json.dumps(deps)
+
   elif args.action == "checksum":
     bad_files = verify_addon(zip, version, manifest)
     res = None
@@ -323,12 +324,14 @@ def processAddon(path, args):
     else:
       res = "KO"
     print path + "; " + version + "; " + res + "; " + json.dumps(bad_files)
+
   elif args.action == "unpack":
     bad_files = verify_addon(zip, version, manifest)
     if not args.force and len(bad_files) > 0:
       raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
     unpack(zip, version, manifest, args.target)
     print path + " unpacked to " + args.target
+
   elif args.action == "repack":
     bad_files = verify_addon(zip, version, manifest)
     if not args.force and len(bad_files) > 0:
@@ -339,6 +342,7 @@ def processAddon(path, args):
     # Eventually do a diff between original xpi and repacked one
     if args.diff or args.diffstat:
       print_diff(path, repacked_path, args.diffstat)
+
   elif args.action == "repackability":
     try:
       bad_files = verify_addon(zip, version, manifest)
@@ -352,7 +356,11 @@ def processAddon(path, args):
     if not os.path.exists(sdk_path):
       raise Exception("Unable to find matching SDK directory for version '" + version + "'")
     try:
-      repacked_path = repack(path, zip, version, manifest, args.target, sdk_path, args.force)
+      repacked_path = repack(path, zip, version, manifest, args.target, sdk_path, args.force,
+                             # We do not want to use install.rdf's addon id
+                             # in order to avoid differences in generated xpi
+                             # when author modified their id in rdf only.
+                             useInstallRdfId=False)
     except Exception, e:
       print path + ": " + str(e)
       return
@@ -364,6 +372,7 @@ def processAddon(path, args):
       print path + ": repackable"
     else:
       print path + ": " + ", ".join(diffs)
+
   else:
     raise Exception("Unsupported action:", args.action)
 
@@ -379,14 +388,14 @@ def verify_addon(zip, version, manifest):
     bad_files.extend(verifyPackageFiles(zip, manifest, version, "api-utils"))
   return bad_files
 
-def repack(path, zip, version, manifest, target, sdk_path, force=False):
+def repack(path, zip, version, manifest, target, sdk_path, force=False, useInstallRdfId=True):
   deps = getAddonDependencies(manifest)
   if "api-utils" in deps.keys() and not force:
     raise Exception("lowlevel-api - We are only able to repack addons which use only high-level APIs from addon-kit package")
 
   # Unpack the given addon to a temporary folder
   tmp = tempfile.mkdtemp(prefix="tmp-addon-folder")
-  unpack(zip, version, manifest, tmp)
+  unpack(zip, version, manifest, tmp, useInstallRdfId=useInstallRdfId)
   
   # Execute `cfx xpi`
   shell = False
@@ -540,6 +549,14 @@ def report_diff(zipA, zipB):
     diff = []
     for line in unified_diff(sA, sB, fromfile="original-xpi/" + file_path, tofile="repacked-xpi/" + file_path):
       diff.append(line)
+    if "install.rdf" in file_path:
+      modified_lines = [line for line in diff if line.startswith("- ") or line.startswith("+ ")]
+      # Ignore `id` modification
+      modified_lines = [line for line in modified_lines if not "<em:id>" in line]
+      # Ignore min/max firefox versions
+      modified_lines = [line for line in modified_lines if not ("<em:minVersion>" in line or "<em:maxVersion>" in line)]
+      if len(modified_lines) == 0:
+        diff = []
     if len(diff) > 0:
       patches.append(diff)
 
@@ -557,7 +574,7 @@ def report_diff(zipA, zipB):
 
   
 # Unpack a given addon to `target` folder
-def unpack(zip, version, manifest, target):
+def unpack(zip, version, manifest, target, useInstallRdfId=True):
   if not os.path.isdir(target):
     raise Exception("`--target` options should be a path to an empty directory")
   if len(os.listdir(target)) > 0:
@@ -636,15 +653,42 @@ def unpack(zip, version, manifest, target):
     raise Exception("Unable to find addon package in manifest's metadata field")
   packageMetadata = metadata[package]
 
+  rdf = zip.read('install.rdf')
+  import HTMLParser
+  unescape = HTMLParser.HTMLParser().unescape
+
   # `id` attribute isn't saved into metadata
   # A whitelist of attributes is used
-  packageMetadata['id'] = manifest['jetpackID']
+  # Restore it directly from install.rdf in case of manual id edition
+  id = re.search("<em:id>(.+)<\/em:id>", rdf).group(1)
+  if useInstallRdfId and id:
+    # we need to remove extra `@jetpack` added to install.rdf's id
+    packageMetadata['id'] = id.replace("@jetpack", "")
+  else:
+    packageMetadata['id'] = manifest['jetpackID']
 
   # Nor `fullName` which is eventually used for install.rdf name
-  rdf = zip.read('install.rdf')
-  name = re.search("<em:name>(.+)<\/em:name>", rdf).group(1)
+  name = unescape(re.search("<em:name>(.+)<\/em:name>", rdf).group(1))
   if name != packageMetadata['name']:
     packageMetadata['fullName'] = name
+
+  # `version` is often manually edited in install.rdf
+  version = re.search("<em:version>(.+)<\/em:version>", rdf).group(1)
+  if version:
+    packageMetadata['version'] = version
+  # otherwise keep version from manifest
+
+  # `creator` field of install.rdf is sometime modified
+  # instead of `author` field of package.json
+  author = re.search("<em:creator>(.+)<\/em:creator>", rdf)
+  if author:
+    packageMetadata['author'] = unescape(author.group(1))
+
+  # `description` is often manually edited in install.rdf
+  description = re.search("<em:description>(.+)<\/em:description>", rdf)
+  if description:
+    packageMetadata['description'] = unescape(description.group(1))
+  # otherwise keep description from manifest
 
   # preferences are hopefully copied to the manifest
   # we just have to copy them back to package.json
