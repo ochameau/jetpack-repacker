@@ -360,7 +360,9 @@ def processAddon(path, args):
                              # We do not want to use install.rdf's addon id
                              # in order to avoid differences in generated xpi
                              # when author modified their id in rdf only.
-                             useInstallRdfId=False)
+                             useInstallRdfId=False,
+                             # We do not want bump either
+                             bump=False)
     except Exception, e:
       print path + ": " + str(e)
       return
@@ -388,20 +390,23 @@ def verify_addon(zip, version, manifest):
     bad_files.extend(verifyPackageFiles(zip, manifest, version, "api-utils"))
   return bad_files
 
-def repack(path, zip, version, manifest, target, sdk_path, force=False, useInstallRdfId=True):
+def repack(path, zip, version, manifest, target, sdk_path, force=False, useInstallRdfId=True, bump=True):
   deps = getAddonDependencies(manifest)
   if "api-utils" in deps.keys() and not force:
     raise Exception("lowlevel-api - We are only able to repack addons which use only high-level APIs from addon-kit package")
 
   # Unpack the given addon to a temporary folder
   tmp = tempfile.mkdtemp(prefix="tmp-addon-folder")
-  unpack(zip, version, manifest, tmp, useInstallRdfId=useInstallRdfId)
+  unpack(zip, version, manifest, tmp, useInstallRdfId=useInstallRdfId, bump=bump)
   
   # Execute `cfx xpi`
   shell = False
   if sys.platform == 'win32':
     shell = True
-  cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && cfx xpi"]
+  cfx_cmd = "cfx xpi"
+  if bump:
+    cfx_cmd = cfx_cmd + " --harness-option=repack=true"
+  cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && " + cfx_cmd]
   cwd = sdk_path
   p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
   std = p.communicate()
@@ -574,7 +579,7 @@ def report_diff(zipA, zipB):
 
   
 # Unpack a given addon to `target` folder
-def unpack(zip, version, manifest, target, useInstallRdfId=True):
+def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
   if not os.path.isdir(target):
     raise Exception("`--target` options should be a path to an empty directory")
   if len(os.listdir(target)) > 0:
@@ -694,6 +699,27 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True):
   # we just have to copy them back to package.json
   if 'preferences' in manifest:
     packageMetadata['preferences'] = manifest['preferences']
+
+  # Bump addon version in case of repack
+  if bump:
+    if not 'version' in packageMetadata:
+      raise Exception("Unable to fetch addon version")
+    version = packageMetadata['version']
+    if 'repack' in manifest:
+      # This addon is a repacked one,
+      # bump last int
+      rx = re.compile('(.*)\.([\d]+)$')
+      match = rx.match(version)
+      if match:
+        matches = match.groups()
+        new_version = "%s.%d" % ( matches[0], int(matches[1])+1 )
+      else:
+        raise Exception("Unable to parse repacked addon version (%s)", version)
+    else:
+      # This addon isn't a repacked one,
+      # just append `.1` to version
+      new_version = "%s.1" % version
+    packageMetadata['version'] = new_version
 
   packageJson = os.open(os.path.join(target, "package.json"), os.O_WRONLY | os.O_CREAT)
   os.write(packageJson, json.dumps(packageMetadata, indent=2))
