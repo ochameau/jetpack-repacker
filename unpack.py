@@ -371,7 +371,7 @@ def processAddon(path, args):
       return
     diffs = report_diff(path, repacked_path)
     if len(diffs) == 0:
-      print path + ": repackable"
+      print path + ": repackable [" + version + "]"
     else:
       print path + ": " + ", ".join(diffs)
 
