@@ -339,6 +339,8 @@ def processAddon(path, args):
     repacked_path = repack(path, zip, version, manifest, args.target, args.sdk, args.force)
     if repacked_path:
       print "Successfully repacked", path, "to", repacked_path
+    else:
+      raise Exception("Unable to repack because of errors during cfx xpi")
     # Eventually do a diff between original xpi and repacked one
     if args.diff or args.diffstat:
       print_diff(path, repacked_path, args.diffstat)

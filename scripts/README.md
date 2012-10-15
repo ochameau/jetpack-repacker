@@ -23,7 +23,7 @@ $ /addons/scripts/fetch-ftp.sh
 
 2/ Unzip jetpack xpi files
 ```
-$ /addons/repacker/scripts/unzip.sh /addons/ftp/ftp.mozilla.org/pub/mozilla.org/addons/ /addons/src
+$ /addons/repacker/scripts/unzip.sh /addons/ftp/ /addons/src
 # This script will unzip all jetpack xpi files to /addons/src/jetpack folder
 # (On 2012/07, it unpacked 770MB of data)
 ```
