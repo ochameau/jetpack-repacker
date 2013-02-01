@@ -12,10 +12,11 @@ $ wget --no-check-certificate https://github.com/ochameau/jetpack-repacker/tarba
 
 1/ Download xpi files
 ```
-$ python fetrch_amo.py
+$ python2.7 fetch_amo.py
 # this will fetch records from the AMO database for every current sdk-based 
 # add-on and download the xpi files to ./srcipts/addons/.
-
+# to capture errors, grep for 'ERR' eg
+# python2.7 fetch_amo.py | grep ERR > errors.txt
 ```
 
 2/ Unzip jetpack xpi files
