@@ -44,7 +44,7 @@ def download(id, filename, download_dir, i, total_rows):
         reason = ''
         if hasattr(e, 'reason'):
             reason = e.reason
-        stdout.write("%s %s: %s\n" % ( e.code, reason, remote ))
+        stdout.write("\nERR %s %s: %s %s\n" % ( e.code, reason, id, filename ))
         stdout.flush()
         err = {'code': e.code, 'reason': reason}
         return err
@@ -82,7 +82,6 @@ def download(id, filename, download_dir, i, total_rows):
     fp.close()
     stdout.write(" Done.\n")
     stdout.flush()
-    return {'code': u.code, 'err': None, 'bytes': totalSize}
 
 if __name__ == '__main__':
     # database connection.
@@ -122,11 +121,7 @@ if __name__ == '__main__':
             id = r[0]
             i += 1
             if not exists(join(download_dir, filename)):
-                result = download(id, filename, download_dir, i, total_rows)
-                if result['err']:
-                    result['id'] = id
-                    result['filename'] = filename
-                    errors.append(result)
+                download(id, filename, download_dir, i, total_rows)
             else:
                 print "File already exists: %s" % filename
     except mdb.Error, e:
@@ -138,6 +133,8 @@ if __name__ == '__main__':
             
         if con:    
             con.close()
+        
+        print len(errors)
 
         if len(errors) > 0:
             print errors
