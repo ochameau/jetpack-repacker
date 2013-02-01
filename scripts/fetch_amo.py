@@ -41,12 +41,12 @@ def download(id, filename, download_dir, i, total_rows):
     try:
         u = urllib2.urlopen(remote)
     except urllib2.HTTPError, e:
-        stdout.write("%s %s: %s\n" % ( e.code, e.reason, remote ))
-        stdout.flush()
-        err = {'code': e.code}
-        # gah, not all errors have a reason
+        reason = ''
         if hasattr(e, 'reason'):
-            err['reason'] = e.reason
+            reason = e.reason
+        stdout.write("%s %s: %s\n" % ( e.code, reason, remote ))
+        stdout.flush()
+        err = {'code': e.code, 'reason': reason}
         return err
 
     h = u.info()
