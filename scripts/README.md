@@ -12,13 +12,10 @@ $ wget --no-check-certificate https://github.com/ochameau/jetpack-repacker/tarba
 
 1/ Download xpi files
 ```
-$ mkdir /addons/ftp
-$ cd /addons/ftp
-$ /addons/scripts/fetch-ftp.sh
-# This script will download all xpi files. You can re-run it at anytime to download only new files.
-# but note that remove files from mozilla ftp will be kept locally.
-# xpi will be in /addons/ftp/ftp.mozilla.org/pub/mozilla.org/addons/
-# (On 2012/07, it downloaded 17GB of files.)
+$ python fetrch_amo.py
+# this will fetch records from the AMO database for every current sdk-based 
+# add-on and download the xpi files to ./srcipts/addons/.
+
 ```
 
 2/ Unzip jetpack xpi files
