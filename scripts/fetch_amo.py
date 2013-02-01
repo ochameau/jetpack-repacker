@@ -43,7 +43,11 @@ def download(id, filename, download_dir, i, total_rows):
     except urllib2.HTTPError, e:
         stdout.write("%s %s: %s\n" % ( e.code, e.reason, remote ))
         stdout.flush()
-        return {'code': e.code, 'err': e.reason}
+        err = {'code': e.code}
+        # gah, not all errors have a reason
+        if hasattr(e, 'reason'):
+            err['reason'] = e.reason
+        return err
 
     h = u.info()
     totalSize = int(h["Content-Length"])
