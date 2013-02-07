@@ -412,13 +412,15 @@ def repack(path, zip, version, manifest, target, sdk_path, force=False, useInsta
   unpack(zip, version, manifest, tmp, useInstallRdfId=useInstallRdfId, bump=bump)
   
   # Execute `cfx xpi`
-  shell = False
-  if sys.platform == 'win32':
-    shell = True
   cfx_cmd = "cfx xpi"
   if bump:
     cfx_cmd = cfx_cmd + " --harness-option=repack=true"
-  cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && " + cfx_cmd]
+  if sys.platform == 'win32':
+    shell = True
+    cmd = ["cmd", "/C", "bin\\activate && cd " + tmp + " && " + cfx_cmd]
+  else:
+    shell = False
+    cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && " + cfx_cmd]
   cwd = sdk_path
   p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
   std = p.communicate()
