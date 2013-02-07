@@ -326,16 +326,26 @@ def processAddon(path, args):
     print path + "; " + version + "; " + res + "; " + json.dumps(bad_files)
 
   elif args.action == "unpack":
-    bad_files = verify_addon(zip, version, manifest)
-    if not args.force and len(bad_files) > 0:
-      raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
+    try:
+      bad_files = verify_addon(zip, version, manifest)
+    except Exception, e:
+      if not args.force:
+        raise e
+    finally:
+      if not args.force and len(bad_files) > 0:
+        raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
     unpack(zip, version, manifest, args.target)
     print path + " unpacked to " + args.target
 
   elif args.action == "repack":
-    bad_files = verify_addon(zip, version, manifest)
-    if not args.force and len(bad_files) > 0:
-      raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
+    try:
+      bad_files = verify_addon(zip, version, manifest)
+    except Exception, e:
+      if not args.force:
+        raise e
+    finally:
+      if not args.force and len(bad_files) > 0:
+        raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
     repacked_path = repack(path, zip, version, manifest, args.target, args.sdk, args.force)
     if repacked_path:
       print "Successfully repacked", path, "to", repacked_path
