@@ -1,3 +1,6 @@
 amo_db_config.yml
-sdks
+jetpack_data.txt
+sdks/
+src/
+xpis/
 *.xpi

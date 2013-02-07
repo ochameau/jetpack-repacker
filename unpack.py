@@ -349,10 +349,10 @@ def processAddon(path, args):
     try:
       bad_files = verify_addon(zip, version, manifest)
     except Exception, e:
-      print path + ": " + str(e)
+      print >> sys.stderr, path + ": " + str(e)
       return
     if not args.force and len(bad_files) > 0:
-      print path + ": checksum - Unable to repack because of wrong checksum or unknown files: " + str(bad_files)
+      print >> sys.stderr, path + ": checksum - Unable to repack because of wrong checksum or unknown files: " + str(bad_files)
       return
     sdk_path = os.path.join(args.sdks, version)
     if not os.path.exists(sdk_path):
@@ -366,16 +366,16 @@ def processAddon(path, args):
                              # We do not want bump either
                              bump=False)
     except Exception, e:
-      print path + ": " + str(e)
+      print >> sys.stderr, path + ": " + str(e)
       return
     if not repacked_path:
-      print path + ": error while repacking" 
+      print >> sys.stderr, path + ": error while repacking" 
       return
     diffs = report_diff(path, repacked_path)
     if len(diffs) == 0:
       print path + ": repackable [" + version + "]"
     else:
-      print path + ": " + ", ".join(diffs)
+      print >> sys.stderr, path + ": " + ", ".join(diffs)
 
   else:
     raise Exception("Unsupported action:", args.action)
@@ -422,9 +422,9 @@ def repack(path, zip, version, manifest, target, sdk_path, force=False, useInsta
     shutil.move(tmpXpiPath, xpi_path)
 
   else:
-    print "Error while building the new xpi: "
-    print std[0]
-    print std[1]
+    print >> sys.stderr, "Error while building the new xpi: "
+    print >> sys.stderr, std[0]
+    print >> sys.stderr, std[1]
     xpi_path = False
 
   # Delete the temporary folder
@@ -762,10 +762,10 @@ parser.add_argument("path",
 args = parser.parse_args()
 
 if args.action == "repack" and not args.sdk:
-  print "`repack` requires --sdk option to be given."
+  print >> sys.stderr, "`repack` requires --sdk option to be given."
   sys.exit()
 elif args.action == "repackability" and not args.sdks:
-  print "`repackability` requires --sdks option to be given."
+  print >> sys.stderr, "`repackability` requires --sdks option to be given."
   sys.exit()
 
 if args.batch:
@@ -778,7 +778,7 @@ if args.batch:
       if os.path.isdir(path) or os.path.splitext(path)[1] == "xpi":
         processAddon(path, args)
     except Exception, e:
-      print "Unable to", args.action, path, ": ", e
+      print >> sys.stderr, "Unable to", args.action, path, ": ", e
 else:
   processAddon(args.path, args)
 
