@@ -162,6 +162,10 @@ def getAddonDependencies(options):
         addModule("api-utils", "@packaging")
       elif reqname == "@loader":
         addModule("api-utils", "@loader")
+      elif reqname == "@loader/unload":
+        addModule("api-utils", "unload")
+      elif reqname == "@loader/options":
+        ()
       else:
         key = None
         if "path" in val: # SDK >= 1.4
@@ -172,7 +176,7 @@ def getAddonDependencies(options):
           key = val["url"]
         else:
           raise Exception("unknown form of requirements entry: " + str(val))
-        
+
         processEntry(manifest[key])
 
   
@@ -264,7 +268,8 @@ def getJidPrefix(manifest):
 # )
 def getPackagesFiles(zip, version, manifest, package):
   packagePath = None
-  if version[:2] == "1." and int(version[2]) >= 4:
+  parts = version.split(".")
+  if int(parts[0]) >= 1 and int(parts[1]) >= 4:
     # SDK >=1.4 have simplified resources folder layout
     packagePath = package
   else:
@@ -600,8 +605,12 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
     raise Exception("Unable to unpack in an non-empty directory", target)
   packages = getPackages(manifest)
 
-  packages.remove("addon-kit")
-  packages.remove("api-utils")
+  if "addon-sdk" in packages: # > 1.12 with new layout
+    packages.remove("addon-sdk")
+  if "addon-kit" in packages:
+    packages.remove("addon-kit")
+  if "api-utils" in packages:
+    packages.remove("api-utils")
   if len(packages) != 1:
     raise Exception("We are only able to unpack/repack addons without extra packages ", packages)
   os.mkdir(os.path.join(target, "lib"))
@@ -619,6 +628,7 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
     if not section in ["lib", "data"]:
       raise Exception("Unexpected section folder name: " + section)
     destFile = os.path.join(target, section, relpath)
+  
     # We have to use zipinfo object in order to extract a file to a different
     # path, then we have to replace `\` in windows as zip only uses `/`
     info = zip.getinfo(file)
