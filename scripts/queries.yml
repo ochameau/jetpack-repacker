@@ -6,7 +6,7 @@ repack_query: >
     WHERE v.`id` = a.`current_version`
     AND a.inactive = 0 
     AND a.status NOT IN (0, 5,10)
-    AND f.jetpack_version NOT IN ( '1.12', '1.13' )
+    AND f.jetpack_version NOT IN ( )
     ORDER BY a.average_daily_users DESC
 repack_query_limit: >
     SELECT DISTINCT(a.id), a.average_daily_users, a.slug, f.id, f.created, f.filename, f.jetpack_version
@@ -16,6 +16,6 @@ repack_query_limit: >
     WHERE v.`id` = a.`current_version`
     AND a.inactive = 0 
     AND a.status NOT IN (0, 5,10)
-    AND f.jetpack_version NOT IN ( '1.12', '1.13' )
+    AND f.jetpack_version NOT IN ( )
     ORDER BY a.average_daily_users DESC
     LIMIT 5
