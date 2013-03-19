@@ -18,6 +18,7 @@ do
   # echo $XPI $KIND $ID
   DST_DIR=$SRC_DIR/$KIND/$ID
   mkdir -p $DST_DIR
+  echo $XPI $DST_DIR
   unzip $XPI $DST_DIR && echo "unziped $ID" || echo "Failed to unzip $ID"
 #  unzip -oq $XPI -d $DST_DIR || echo "Failed to unzip $ID"
 done

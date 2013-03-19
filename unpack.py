@@ -142,7 +142,7 @@ def getAddonDependencies(options):
       return
 
     # We do not care about SDK packages dependencies
-    if packageName in ["addon-kit", "api-utils"]:
+    if packageName in ["addon-sdk", "addon-kit", "api-utils"]:
       return
 
     requirements = None
@@ -165,6 +165,8 @@ def getAddonDependencies(options):
       elif reqname == "@loader/unload":
         addModule("api-utils", "unload")
       elif reqname == "@loader/options":
+        ()
+      elif reqname == "@l10n/data":
         ()
       else:
         key = None
@@ -268,7 +270,7 @@ def getJidPrefix(manifest):
 # )
 def getPackagesFiles(zip, version, manifest, package):
   packagePath = None
-  parts = version.split(".")
+  parts = re.sub(r'(b|rc)\d+', '', version).split(".")
   if int(parts[0]) >= 1 and int(parts[1]) >= 4:
     # SDK >=1.4 have simplified resources folder layout
     packagePath = package
@@ -331,6 +333,7 @@ def processAddon(path, args):
     print path + "; " + version + "; " + res + "; " + json.dumps(bad_files)
 
   elif args.action == "unpack":
+    bad_files = []
     try:
       bad_files = verify_addon(zip, version, manifest)
     except Exception, e:
@@ -343,6 +346,7 @@ def processAddon(path, args):
     print path + " unpacked to " + args.target
 
   elif args.action == "repack":
+    bad_files = []
     try:
       bad_files = verify_addon(zip, version, manifest)
     except Exception, e:
@@ -361,6 +365,7 @@ def processAddon(path, args):
       print_diff(path, repacked_path, args.diffstat)
 
   elif args.action == "repackability":
+    bad_files = []
     try:
       bad_files = verify_addon(zip, version, manifest)
     except Exception, e:
