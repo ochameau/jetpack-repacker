@@ -9,7 +9,7 @@ import subprocess
 import hashlib
 import urllib
 
-JETPACK_HASH_URL = "https://raw.github.com/mattbasta/amo-validator/master/validator/testcases/jetpack_data.txt"
+JETPACK_HASH_URL = "https://raw.github.com/mozilla/amo-validator/master/validator/testcases/jetpack_data.txt"
 
 # Build a big hashtable that can be queried like this:
 # - for a package file:
