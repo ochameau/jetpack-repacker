@@ -633,6 +633,8 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
     if not section in ["lib", "data"]:
       raise Exception("Unexpected section folder name: " + section)
     destFile = os.path.join(target, section, relpath)
+    # For some reason Zip.extract(info), info.filename should be a relative path
+    destFile = os.path.relpath(destFile, os.getcwd())
   
     # We have to use zipinfo object in order to extract a file to a different
     # path, then we have to replace `\` in windows as zip only uses `/`
